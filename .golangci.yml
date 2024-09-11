@@ -1,0 +1,21 @@
+run:
+  timeout: 10m
+issues:
+  exclude-dirs:
+    - vendor
+  exclude-files:
+    - "zz_generated.*"
+    - "suite_test.go"
+linters-settings:
+  gci:
+    skip-generated: false
+    custom-order: true
+    sections:
+      - standard
+      - prefix(golang.org)
+      - prefix(k8s.io)
+      - prefix(sigs.k8s.io)
+      - default
+      - prefix(github.com/mantech-oss)
+      - blank
+      - dot
