@@ -133,8 +133,8 @@ func startManager(flag *flagConfig, scheme *runtime.Scheme) error {
 		return err
 	}
 
-	if err = controller.SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to set up alert rule controller")
+	if err = controller.SetupConfigMapController(mgr); err != nil {
+		setupLog.Error(err, "unable to set up configmap controller")
 		return err
 	}
 	// +kubebuilder:scaffold:builder

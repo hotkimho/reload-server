@@ -39,7 +39,7 @@ const (
 )
 
 // ConfigMapReconciler reconciles a ConfigMap object
-type ConfigMapReconciler struct {
+type ConfigMapController struct {
 	client   client.Client
 	scheme   *runtime.Scheme
 	log      logr.Logger
@@ -50,7 +50,7 @@ type ConfigMapReconciler struct {
 // +kubebuilder:rbac:groups=core,resources=configmaps/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core,resources=configmaps/finalizers,verbs=update
 
-func (r *ConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *ConfigMapController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	cm := &corev1.ConfigMap{}
 	if err := r.client.Get(ctx, req.NamespacedName, cm); err != nil {
 		return ctrl.Result{}, client.IgnoreNotFound(err)
@@ -84,7 +84,7 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	return ctrl.Result{}, nil
 }
 
-func SetupWithManager(mgr ctrl.Manager) error {
+func SetupConfigMapController(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.ConfigMap{}).
 		WithEventFilter(predicate.Funcs{
@@ -117,7 +117,7 @@ func SetupWithManager(mgr ctrl.Manager) error {
 			},
 			DeleteFunc: func(e event.DeleteEvent) bool { return false },
 		}).
-		Complete(&ConfigMapReconciler{
+		Complete(&ConfigMapController{
 			client:   mgr.GetClient(),
 			scheme:   mgr.GetScheme(),
 			log:      ctrl.Log.WithName("controller").WithName("reloader"),
