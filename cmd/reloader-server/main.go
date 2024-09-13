@@ -137,6 +137,10 @@ func startManager(flag *flagConfig, scheme *runtime.Scheme) error {
 		setupLog.Error(err, "unable to set up configmap controller")
 		return err
 	}
+	if err = controller.SetupSecretController(mgr); err != nil {
+		setupLog.Error(err, "unable to set up namespace controller")
+		return err
+	}
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

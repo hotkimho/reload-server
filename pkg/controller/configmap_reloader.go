@@ -90,7 +90,6 @@ func SetupConfigMapController(mgr ctrl.Manager) error {
 		WithEventFilter(predicate.Funcs{
 			CreateFunc: func(e event.CreateEvent) bool { return false },
 			UpdateFunc: func(e event.UpdateEvent) bool {
-				// TODO: secret 컨트롤러 개발할 때, 공통으로 사용할 수 있는 함수로 분리 및 가독성 개선
 				oldCm, newCm := e.ObjectOld.(*corev1.ConfigMap), e.ObjectNew.(*corev1.ConfigMap)
 				// data 변경이 없는 경우 스킵
 				if equality.Semantic.DeepEqual(oldCm.Data, newCm.Data) {
