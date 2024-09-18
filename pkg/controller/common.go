@@ -70,7 +70,7 @@ func reloaderUpdateEventFilter(e event.UpdateEvent) bool {
 	}
 
 	// 설정된 필드가 변경되지 않은 경우 filter 처리
-	if k, ok := newObj.GetAnnotations()[reloaderConfigKey]; ok {
+	if k, ok := newObj.GetAnnotations()[reloaderFiledKey]; ok {
 		oldValue, oldOk := getDataValueByKey(oldData, k)
 		newValue, newOk := getDataValueByKey(newData, k)
 		if !newOk {

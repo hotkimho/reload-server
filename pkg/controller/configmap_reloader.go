@@ -28,12 +28,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
-const (
-	reloaderLabelKey   = "edu.accordions.reloader"
-	reloaderRolloutKey = "edu.accordions.reloader/restartedAt"
-	reloaderConfigKey  = "edu.accordions.reloader/config"
-)
-
 // ConfigMapReconciler reconciles a ConfigMap object
 type ConfigMapController struct {
 	client   client.Client
