@@ -3,15 +3,20 @@ package controller
 import (
 	"context"
 	"errors"
-	"github.com/go-logr/logr"
+	"reflect"
+	"strings"
+	"time"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/tools/record"
+
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
-	"time"
+
+	"github.com/go-logr/logr"
 )
 
 func reloadDeployments(
@@ -21,7 +26,6 @@ func reloadDeployments(
 	log logr.Logger,
 	recorder record.EventRecorder,
 ) error {
-
 	// 레이블이 없는 키는 filter에서 처리됨
 	k, v := reloaderLabelKey, obj.GetLabels()[reloaderLabelKey]
 	dList := &appsv1.DeploymentList{}
@@ -38,7 +42,7 @@ func reloadDeployments(
 			d.Spec.Template.Annotations = make(map[string]string)
 		}
 
-		// 재시작 시간 업데이트
+		// 재시작 시간 업데이트(rollout)
 		d.Spec.Template.Annotations[reloaderRolloutKey] = time.Now().Format(time.RFC3339)
 		if err := c.Update(ctx, &d); err != nil {
 			return err
@@ -60,6 +64,7 @@ func reloaderUpdateEventFilter(e event.UpdateEvent) bool {
 		return false
 	}
 
+	// configMap, secret의 Data 조회
 	oldData, newData, err := getDataFromObject(oldObj, newObj)
 	if err != nil {
 		return false
@@ -70,16 +75,15 @@ func reloaderUpdateEventFilter(e event.UpdateEvent) bool {
 	}
 
 	// 설정된 필드가 변경되지 않은 경우 filter 처리
-	if k, ok := newObj.GetAnnotations()[reloaderFiledKey]; ok {
-		oldValue, oldOk := getDataValueByKey(oldData, k)
-		newValue, newOk := getDataValueByKey(newData, k)
-		if !newOk {
-			return false
+	if k, ok := newObj.GetAnnotations()[reloaderFieldKey]; ok {
+		fieldKeys := strings.Split(k, ",")
+		for _, fk := range fieldKeys {
+			if isFieldValueChanged(oldData, newData, fk) {
+				return true
+			}
 		}
 
-		if oldOk && newValue == oldValue {
-			return false
-		}
+		return false
 	}
 
 	return true
@@ -100,8 +104,18 @@ func getDataFromObject(oldObj, newObj client.Object) (interface{}, interface{}, 
 	return nil, nil, errors.New("unsupported object type")
 }
 
-func getDataValueByKey(dataFiled interface{}, key string) (interface{}, bool) {
-	switch objType := dataFiled.(type) {
+func isFieldValueChanged(oldData, newData interface{}, fieldKey string) bool {
+	oldValue, oldOk := getDataValueByKey(oldData, fieldKey)
+	newValue, newOk := getDataValueByKey(newData, fieldKey)
+	if !newOk {
+		return false
+	}
+
+	return !(oldOk && reflect.DeepEqual(newValue, oldValue))
+}
+
+func getDataValueByKey(dataField interface{}, key string) (interface{}, bool) {
+	switch objType := dataField.(type) {
 	case map[string]string: // configmap
 		if v, ok := objType[key]; ok {
 			return v, true
