@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -66,5 +67,11 @@ func (c *ManagerConfig) ConvertCtrlOption(scheme *runtime.Scheme) ctrl.Options {
 		HealthProbeBindAddress: c.ProbeAddr,
 		LeaderElection:         c.EnableLeaderElection,
 		LeaderElectionID:       c.LeaderElectionID,
+		Cache: cache.Options{
+			DefaultNamespaces: map[string]cache.Config{
+				"default": cache.Config{},
+				"acc-edu": cache.Config{},
+			},
+		},
 	}
 }
