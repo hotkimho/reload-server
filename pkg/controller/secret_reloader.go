@@ -20,9 +20,13 @@ type SecretController struct {
 	recorder record.EventRecorder
 }
 
-func (r *SecretController) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
+// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=secrets/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=core,resources=secrets/finalizers,verbs=update
+
+func (r *SecretController) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	s := &corev1.Secret{}
-	if err := r.client.Get(ctx, request.NamespacedName, s); err != nil {
+	if err := r.client.Get(ctx, req.NamespacedName, s); err != nil {
 		return reconcile.Result{}, client.IgnoreNotFound(err)
 	}
 
@@ -32,10 +36,6 @@ func (r *SecretController) Reconcile(ctx context.Context, request reconcile.Requ
 
 	return reconcile.Result{}, nil
 }
-
-// +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=core,resources=secrets/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=core,resources=secrets/finalizers,verbs=update
 
 func setupSecretController(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
