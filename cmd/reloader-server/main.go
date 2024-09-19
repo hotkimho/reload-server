@@ -27,6 +27,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
@@ -62,7 +63,11 @@ func init() {
 }
 
 func main() {
-	cfg := parseFlagConfig()
+	cfg, err := parseFlagConfig()
+	if err != nil {
+		setupLog.Error(err, "unable to parse flag config")
+		os.Exit(1)
+	}
 
 	opts := zap.Options{
 		Development: cfg.debugMode,
@@ -79,7 +84,7 @@ func main() {
 	}
 }
 
-func parseFlagConfig() *flagConfig {
+func parseFlagConfig() (*flagConfig, error) {
 	flagCfg := &flagConfig{}
 
 	flag.StringVar(&flagCfg.configName, "config-name", "reloader-server-config", "")
@@ -94,9 +99,13 @@ func parseFlagConfig() *flagConfig {
 	} else {
 		flag.StringVar(&kubeconfigPath, KUBECONFIG, "$HOME/.kube/config", "")
 	}
-	os.Setenv("KUBECONFIG", kubeconfigPath)
 
-	return flagCfg
+	if err := os.Setenv("KUBECONFIG", kubeconfigPath); err != nil {
+		setupLog.Error(err, "unable to set kubeconfig")
+		return nil, err
+	}
+
+	return flagCfg, nil
 }
 
 func startManager(flag *flagConfig, scheme *runtime.Scheme) error {
@@ -114,11 +123,15 @@ func startManager(flag *flagConfig, scheme *runtime.Scheme) error {
 		return err
 	}
 
-	cm, err := client.CoreV1().ConfigMaps(flag.configNamespace).Get(ctx, flag.configName, metav1.GetOptions{})
+	cmClient := client.CoreV1().ConfigMaps(flag.configNamespace)
+	cm, err := cmClient.Get(ctx, flag.configName, metav1.GetOptions{})
 	if err != nil {
 		setupLog.Error(err, "unable to get configmap")
 		return err
 	}
+
+	refController := config.NewReferenceControllerConfig(flag.configName, flag.configNamespace, flag.configDataKey, cmClient)
+	refController.Start(ctx)
 
 	cfg := config.NewConfig()
 	if err := yaml.Unmarshal([]byte(cm.Data[flag.configDataKey]), &cfg); err != nil {
