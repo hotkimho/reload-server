@@ -53,7 +53,7 @@ func (r *ConfigMapController) Reconcile(ctx context.Context, req ctrl.Request) (
 	return ctrl.Result{}, nil
 }
 
-func SetupConfigMapController(mgr ctrl.Manager) error {
+func setupConfigMapController(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.ConfigMap{}).
 		WithEventFilter(predicate.Funcs{

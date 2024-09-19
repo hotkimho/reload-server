@@ -37,7 +37,7 @@ func (r *SecretController) Reconcile(ctx context.Context, request reconcile.Requ
 // +kubebuilder:rbac:groups=core,resources=secrets/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core,resources=secrets/finalizers,verbs=update
 
-func SetupSecretController(mgr ctrl.Manager) error {
+func setupSecretController(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&corev1.Secret{}).
 		WithEventFilter(predicate.Funcs{
