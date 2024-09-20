@@ -18,6 +18,9 @@ package main
 
 import (
 	"flag"
+	"github.com/hotkimho/reloader-server/project/internal/pkg/config"
+	"github.com/hotkimho/reloader-server/project/internal/pkg/controllers/configmap"
+	"github.com/hotkimho/reloader-server/project/internal/pkg/controllers/secret"
 	"os"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,9 +37,6 @@ import (
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
-
-	"github.com/hotkimho/reloader-server/project/internal/config"
-	"github.com/hotkimho/reloader-server/project/pkg/controller"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -146,8 +146,12 @@ func startManager(flag *flagConfig, scheme *runtime.Scheme) error {
 		return err
 	}
 
-	if err = controller.SetupReloaderController(mgr); err != nil {
-		setupLog.Error(err, "unable to set up reloader controller")
+	if configmap.SetupConfigMapController(mgr) != nil {
+		setupLog.Error(err, "unable to setup configmap controller")
+		return err
+	}
+	if secret.SetupSecretController(mgr) != nil {
+		setupLog.Error(err, "unable to setup secret controller")
 		return err
 	}
 	// +kubebuilder:scaffold:builder
