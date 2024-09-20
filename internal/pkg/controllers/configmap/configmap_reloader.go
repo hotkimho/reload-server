@@ -18,13 +18,14 @@ package configmap
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -61,55 +62,6 @@ func SetupConfigMapController(mgr ctrl.Manager) error {
 		})
 }
 
-// +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=core,resources=configmaps/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=core,resources=configmaps/finalizers,verbs=update
-
-func (r *ConfigMapController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	cm := &corev1.ConfigMap{}
-	if err := r.client.Get(ctx, req.NamespacedName, cm); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
-	}
-
-	if err := r.reloadDeployments(ctx, cm); err != nil {
-		return ctrl.Result{}, err
-	}
-
-	return ctrl.Result{}, nil
-}
-
-func (r *ConfigMapController) reloadDeployments(ctx context.Context, cm *corev1.ConfigMap) error {
-	// 레이블이 없는 키는 filter에서 처리됨
-	k, v := constants.ReloaderLabelKey, cm.GetLabels()[constants.ReloaderLabelKey]
-	dList := &appsv1.DeploymentList{}
-
-	if err := r.client.List(ctx, dList, &client.ListOptions{
-		LabelSelector: labels.SelectorFromSet(labels.Set{k: v}),
-		Namespace:     cm.GetNamespace(),
-	}); err != nil {
-		return err
-	}
-
-	// 조건에 맞는 디플로이먼트들에 대해 처리
-	for _, d := range dList.Items {
-		if d.Spec.Template.Annotations == nil {
-			d.Spec.Template.Annotations = make(map[string]string)
-		}
-
-		// 재시작 시간 업데이트(rollout)
-		d.Spec.Template.Annotations[constants.ReloaderRolloutKey] = time.Now().Format(time.RFC3339)
-		if err := r.client.Update(ctx, &d); err != nil {
-			return err
-		}
-
-		// 이벤트 및 로그 생성
-		r.recorder.Eventf(&d, corev1.EventTypeNormal, "Reloaded", "Deployment %s reloaded", d.Name)
-		r.log.Info("Deployment reloaded", "Deployment", d.Name)
-	}
-
-	return nil
-}
-
 func configMapUpdateEventFilter(e event.UpdateEvent) bool {
 	oldObj, oldOk := e.ObjectOld.(*corev1.ConfigMap)
 	newObj, newOk := e.ObjectNew.(*corev1.ConfigMap)
@@ -126,4 +78,137 @@ func configMapUpdateEventFilter(e event.UpdateEvent) bool {
 	}
 
 	return true
+}
+
+// +kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=configmaps/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=core,resources=configmaps/finalizers,verbs=update
+
+func (r *ConfigMapController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	cm := &corev1.ConfigMap{}
+	if err := r.client.Get(ctx, req.NamespacedName, cm); err != nil {
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
+	nsdName := types.NamespacedName{
+		Namespace: cm.Namespace,
+		Name:      cm.GetLabels()[constants.ReloaderLabelKey],
+	}
+
+	rr, err := r.getReloadResource(ctx, nsdName)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	switch rr := rr.(type) {
+	case *appsv1.Deployment:
+		if err := r.reloadDeployment(ctx, rr); err != nil {
+			return ctrl.Result{}, err
+		}
+
+	case *appsv1.StatefulSet:
+		if err := r.reloadStatefulSet(ctx, rr); err != nil {
+			return ctrl.Result{}, err
+		}
+
+	case *appsv1.DaemonSet:
+		if err := r.reloadDaemonSet(ctx, rr); err != nil {
+			return ctrl.Result{}, err
+		}
+	default:
+		return ctrl.Result{}, errors.New("unsupported resource type")
+	}
+
+	return ctrl.Result{}, nil
+}
+
+func (r *ConfigMapController) getReloadResource(ctx context.Context, namespacedName types.NamespacedName) (client.Object, error) {
+	if d, err := r.getDeployment(ctx, namespacedName); err == nil {
+		return d, nil
+	}
+
+	if ss, err := r.getStatefulSet(ctx, namespacedName); err == nil {
+		return ss, nil
+	}
+
+	if ds, err := r.getDaemonSet(ctx, namespacedName); err == nil {
+		return ds, nil
+	}
+
+	return nil, errors.New("not found resource type")
+}
+
+func (r *ConfigMapController) getDeployment(ctx context.Context, namespacedName types.NamespacedName) (*appsv1.Deployment, error) {
+	d := &appsv1.Deployment{}
+	if err := r.client.Get(ctx, namespacedName, d); err != nil {
+		return nil, err
+	}
+
+	return d, nil
+}
+
+func (r *ConfigMapController) getStatefulSet(ctx context.Context, namespacedName types.NamespacedName) (*appsv1.StatefulSet, error) {
+	ss := &appsv1.StatefulSet{}
+	if err := r.client.Get(ctx, namespacedName, ss); err != nil {
+		return nil, err
+	}
+
+	return ss, nil
+}
+
+func (r *ConfigMapController) getDaemonSet(ctx context.Context, namespacedName types.NamespacedName) (*appsv1.DaemonSet, error) {
+	ds := &appsv1.DaemonSet{}
+	if err := r.client.Get(ctx, namespacedName, ds); err != nil {
+		return nil, err
+	}
+
+	return ds, nil
+}
+
+func (r *ConfigMapController) reloadDeployment(ctx context.Context, d *appsv1.Deployment) error {
+	if d.Spec.Template.Annotations == nil {
+		d.Spec.Template.Annotations = make(map[string]string)
+	}
+
+	d.Spec.Template.Annotations[constants.ReloaderRolloutKey] = time.Now().Format(time.RFC3339)
+	if err := r.client.Update(ctx, d); err != nil {
+		return err
+	}
+
+	r.recorder.Eventf(d, corev1.EventTypeNormal, "Reloaded", "Deployment %s reloaded", d.Name)
+	r.log.Info("d reloaded", "Deployment", d.Name)
+
+	return nil
+}
+
+func (r *ConfigMapController) reloadStatefulSet(ctx context.Context, ss *appsv1.StatefulSet) error {
+	if ss.Spec.Template.Annotations == nil {
+		ss.Spec.Template.Annotations = make(map[string]string)
+	}
+
+	ss.Spec.Template.Annotations[constants.ReloaderRolloutKey] = time.Now().Format(time.RFC3339)
+	if err := r.client.Update(ctx, ss); err != nil {
+		return err
+	}
+
+	r.recorder.Eventf(ss, corev1.EventTypeNormal, "Reloaded", "StatefulSet %s reloaded", ss.Name)
+	r.log.Info("StatefulSet reloaded", "StatefulSet", ss.Name)
+
+	return nil
+}
+
+func (r *ConfigMapController) reloadDaemonSet(ctx context.Context, ds *appsv1.DaemonSet) error {
+	if ds.Spec.Template.Annotations == nil {
+		ds.Spec.Template.Annotations = make(map[string]string)
+	}
+
+	ds.Spec.Template.Annotations[constants.ReloaderRolloutKey] = time.Now().Format(time.RFC3339)
+	if err := r.client.Update(ctx, ds); err != nil {
+		return err
+	}
+
+	r.recorder.Eventf(ds, corev1.EventTypeNormal, "Reloaded", "DaemonSet %s reloaded", ds.Name)
+	r.log.Info("DaemonSet reloaded", "DaemonSet", ds.Name)
+
+	return nil
 }
