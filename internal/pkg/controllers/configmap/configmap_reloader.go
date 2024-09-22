@@ -36,6 +36,7 @@ import (
 	"github.com/go-logr/logr"
 
 	"github.com/hotkimho/reloader-server/project/internal/pkg/constants"
+	"github.com/hotkimho/reloader-server/project/internal/pkg/utils"
 )
 
 // ConfigMapReconciler reconciles a ConfigMap object
@@ -100,69 +101,48 @@ func (r *ConfigMapController) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	switch rr := rr.(type) {
-	case *appsv1.Deployment:
-		if err := r.reloadDeployment(ctx, rr); err != nil {
-			return ctrl.Result{}, err
-		}
-
-	case *appsv1.StatefulSet:
-		if err := r.reloadStatefulSet(ctx, rr); err != nil {
-			return ctrl.Result{}, err
-		}
-
-	case *appsv1.DaemonSet:
-		if err := r.reloadDaemonSet(ctx, rr); err != nil {
-			return ctrl.Result{}, err
-		}
-	default:
-		return ctrl.Result{}, errors.New("unsupported resource type")
+	if err := r.reloadResource(ctx, rr); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	return ctrl.Result{}, nil
 }
 
 func (r *ConfigMapController) getReloadResource(ctx context.Context, namespacedName types.NamespacedName) (client.Object, error) {
-	if d, err := r.getDeployment(ctx, namespacedName); err == nil {
+	if d, err := utils.GetDeployment(r.client, ctx, namespacedName); err == nil {
 		return d, nil
 	}
 
-	if ss, err := r.getStatefulSet(ctx, namespacedName); err == nil {
+	if ss, err := utils.GetStatefulSet(r.client, ctx, namespacedName); err == nil {
 		return ss, nil
 	}
 
-	if ds, err := r.getDaemonSet(ctx, namespacedName); err == nil {
+	if ds, err := utils.GetDaemonSet(r.client, ctx, namespacedName); err == nil {
 		return ds, nil
 	}
 
 	return nil, errors.New("not found resource type")
 }
 
-func (r *ConfigMapController) getDeployment(ctx context.Context, namespacedName types.NamespacedName) (*appsv1.Deployment, error) {
-	d := &appsv1.Deployment{}
-	if err := r.client.Get(ctx, namespacedName, d); err != nil {
-		return nil, err
+func (r *ConfigMapController) reloadResource(ctx context.Context, obj client.Object) error {
+	switch rr := obj.(type) {
+	case *appsv1.Deployment:
+		if err := r.reloadDeployment(ctx, rr); err != nil {
+			return err
+		}
+
+	case *appsv1.StatefulSet:
+		if err := r.reloadStatefulSet(ctx, rr); err != nil {
+			return err
+		}
+
+	case *appsv1.DaemonSet:
+		if err := r.reloadDaemonSet(ctx, rr); err != nil {
+			return err
+		}
 	}
 
-	return d, nil
-}
-
-func (r *ConfigMapController) getStatefulSet(ctx context.Context, namespacedName types.NamespacedName) (*appsv1.StatefulSet, error) {
-	ss := &appsv1.StatefulSet{}
-	if err := r.client.Get(ctx, namespacedName, ss); err != nil {
-		return nil, err
-	}
-
-	return ss, nil
-}
-
-func (r *ConfigMapController) getDaemonSet(ctx context.Context, namespacedName types.NamespacedName) (*appsv1.DaemonSet, error) {
-	ds := &appsv1.DaemonSet{}
-	if err := r.client.Get(ctx, namespacedName, ds); err != nil {
-		return nil, err
-	}
-
-	return ds, nil
+	return errors.New("not found resource type")
 }
 
 func (r *ConfigMapController) reloadDeployment(ctx context.Context, d *appsv1.Deployment) error {
