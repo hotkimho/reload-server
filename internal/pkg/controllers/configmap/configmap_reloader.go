@@ -58,7 +58,7 @@ func SetupConfigMapController(mgr ctrl.Manager) error {
 		Complete(&ConfigMapController{
 			client:   mgr.GetClient(),
 			scheme:   mgr.GetScheme(),
-			log:      ctrl.Log.WithName("controller").WithName("reloader"),
+			log:      ctrl.Log.WithName("controller").WithName("configmap-reloader"),
 			recorder: mgr.GetEventRecorderFor("reloader"),
 		})
 }
@@ -125,72 +125,46 @@ func (r *ConfigMapController) getReloadResource(ctx context.Context, namespacedN
 }
 
 func (r *ConfigMapController) reloadResource(ctx context.Context, obj client.Object) error {
-	switch rr := obj.(type) {
+	var kind string
+	switch obj.(type) {
 	case *appsv1.Deployment:
-		if err := r.reloadDeployment(ctx, rr); err != nil {
-			return err
-		}
-
+		kind = "Deployment"
 	case *appsv1.StatefulSet:
-		if err := r.reloadStatefulSet(ctx, rr); err != nil {
-			return err
-		}
-
+		kind = "StatefulSet"
 	case *appsv1.DaemonSet:
-		if err := r.reloadDaemonSet(ctx, rr); err != nil {
-			return err
-		}
+		kind = "DaemonSet"
 	default:
 		return errors.New("cannot reload resource type")
 	}
 
-	return nil
+	return r.reload(ctx, obj, kind)
 }
 
-func (r *ConfigMapController) reloadDeployment(ctx context.Context, d *appsv1.Deployment) error {
-	if d.Spec.Template.Annotations == nil {
-		d.Spec.Template.Annotations = make(map[string]string)
+func (r *ConfigMapController) reload(ctx context.Context, obj client.Object, kind string) error {
+	var podTemplate *corev1.PodTemplateSpec
+
+	switch rr := obj.(type) {
+	case *appsv1.Deployment:
+		podTemplate = &rr.Spec.Template
+	case *appsv1.StatefulSet:
+		podTemplate = &rr.Spec.Template
+	case *appsv1.DaemonSet:
+		podTemplate = &rr.Spec.Template
+	default:
+		return errors.New("cannot reload resource type")
 	}
 
-	d.Spec.Template.Annotations[constants.ReloaderRolloutKey] = time.Now().Format(time.RFC3339)
-	if err := r.client.Update(ctx, d); err != nil {
+	if podTemplate.Annotations == nil {
+		podTemplate.Annotations = make(map[string]string)
+	}
+
+	podTemplate.Annotations[constants.ReloaderRolloutKey] = time.Now().Format(time.RFC3339)
+	if err := r.client.Update(ctx, obj); err != nil {
 		return err
 	}
 
-	r.recorder.Eventf(d, corev1.EventTypeNormal, "Reloaded", "Deployment %s reloaded", d.Name)
-	r.log.Info("d reloaded", "Deployment", d.Name)
-
-	return nil
-}
-
-func (r *ConfigMapController) reloadStatefulSet(ctx context.Context, ss *appsv1.StatefulSet) error {
-	if ss.Spec.Template.Annotations == nil {
-		ss.Spec.Template.Annotations = make(map[string]string)
-	}
-
-	ss.Spec.Template.Annotations[constants.ReloaderRolloutKey] = time.Now().Format(time.RFC3339)
-	if err := r.client.Update(ctx, ss); err != nil {
-		return err
-	}
-
-	r.recorder.Eventf(ss, corev1.EventTypeNormal, "Reloaded", "StatefulSet %s reloaded", ss.Name)
-	r.log.Info("StatefulSet reloaded", "StatefulSet", ss.Name)
-
-	return nil
-}
-
-func (r *ConfigMapController) reloadDaemonSet(ctx context.Context, ds *appsv1.DaemonSet) error {
-	if ds.Spec.Template.Annotations == nil {
-		ds.Spec.Template.Annotations = make(map[string]string)
-	}
-
-	ds.Spec.Template.Annotations[constants.ReloaderRolloutKey] = time.Now().Format(time.RFC3339)
-	if err := r.client.Update(ctx, ds); err != nil {
-		return err
-	}
-
-	r.recorder.Eventf(ds, corev1.EventTypeNormal, "Reloaded", "DaemonSet %s reloaded", ds.Name)
-	r.log.Info("DaemonSet reloaded", "DaemonSet", ds.Name)
+	r.recorder.Eventf(obj, corev1.EventTypeNormal, "Reloaded", "%s %s reloaded", kind, obj.GetName())
+	r.log.Info("Resource reloaded", kind, obj.GetName())
 
 	return nil
 }
