@@ -8,7 +8,6 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -93,37 +92,6 @@ func (r *SecretController) Reconcile(ctx context.Context, req reconcile.Request)
 	return reconcile.Result{}, nil
 }
 
-func (r *SecretController) reloadDeployments(ctx context.Context, secret *corev1.Secret) error {
-	k, v := constants.ReloaderLabelKey, secret.GetLabels()[constants.ReloaderLabelKey]
-	dList := &appsv1.DeploymentList{}
-
-	if err := r.client.List(ctx, dList, &client.ListOptions{
-		LabelSelector: labels.SelectorFromSet(labels.Set{k: v}),
-		Namespace:     secret.GetNamespace(),
-	}); err != nil {
-		return err
-	}
-
-	// 조건에 맞는 디플로이먼트들에 대해 처리
-	for _, d := range dList.Items {
-		if d.Spec.Template.Annotations == nil {
-			d.Spec.Template.Annotations = make(map[string]string)
-		}
-
-		// 재시작 시간 업데이트(rollout)
-		d.Spec.Template.Annotations[constants.ReloaderRolloutKey] = time.Now().Format(time.RFC3339)
-		if err := r.client.Update(ctx, &d); err != nil {
-			return err
-		}
-
-		// 이벤트 및 로그 생성
-		r.recorder.Eventf(&d, corev1.EventTypeNormal, "Reloaded", "Deployment %s reloaded", d.Name)
-		r.log.Info("Deployment reloaded", "Deployment", d.Name)
-	}
-
-	return nil
-}
-
 func (r *SecretController) getReloadResource(ctx context.Context, namespacedName types.NamespacedName) (client.Object, error) {
 	if d, err := utils.GetDeployment(r.client, ctx, namespacedName); err == nil {
 		return d, nil
@@ -156,9 +124,11 @@ func (r *SecretController) reloadResource(ctx context.Context, obj client.Object
 		if err := r.reloadDaemonSet(ctx, rr); err != nil {
 			return err
 		}
+	default:
+		return errors.New("cannot reload resource type")
 	}
 
-	return errors.New("not found resource type")
+	return nil
 }
 
 func (r *SecretController) reloadDeployment(ctx context.Context, d *appsv1.Deployment) error {

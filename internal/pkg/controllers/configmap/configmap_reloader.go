@@ -140,9 +140,11 @@ func (r *ConfigMapController) reloadResource(ctx context.Context, obj client.Obj
 		if err := r.reloadDaemonSet(ctx, rr); err != nil {
 			return err
 		}
+	default:
+		return errors.New("cannot reload resource type")
 	}
 
-	return errors.New("not found resource type")
+	return nil
 }
 
 func (r *ConfigMapController) reloadDeployment(ctx context.Context, d *appsv1.Deployment) error {
